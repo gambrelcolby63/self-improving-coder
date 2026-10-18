@@ -5,7 +5,7 @@
  "experience_lib_sha": null,
  "n": 90,
  "gate_log": [
-  "reject a (70.0%): does not beat champion a (70.0%)",
-  "promote b (73.3%) over a (70.0%)"
+  "reject a (70.0%): does not beat champion b (73.3%)",
+  "reject b (73.3%): does not beat champion b (73.3%)"
  ]
 }

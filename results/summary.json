@@ -52,5 +52,32 @@
    "minutes": 10.8,
    "complete": true
   }
+ },
+ "learn": {
+  "HumanEval": {
+   "n": 84,
+   "passed": 58,
+   "pass@1": 69.0
+  },
+  "ALL": {
+   "n": 90,
+   "passed": 62,
+   "pass@1": 68.9
+  },
+  "custom-cpp": {
+   "n": 3,
+   "passed": 2,
+   "pass@1": 66.7
+  },
+  "custom-verilog": {
+   "n": 3,
+   "passed": 2,
+   "pass@1": 66.7
+  },
+  "_meta": {
+   "llm_calls": 116,
+   "minutes": 21.0,
+   "complete": true
+  }
  }
 }
