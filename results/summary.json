@@ -28,19 +28,29 @@
  },
  "b": {
   "HumanEval": {
-   "n": 16,
-   "passed": 16,
-   "pass@1": 100.0
+   "n": 80,
+   "passed": 60,
+   "pass@1": 75.0
   },
   "ALL": {
-   "n": 16,
-   "passed": 16,
-   "pass@1": 100.0
+   "n": 90,
+   "passed": 66,
+   "pass@1": 73.3
+  },
+  "custom-cpp": {
+   "n": 5,
+   "passed": 2,
+   "pass@1": 40.0
+  },
+  "custom-verilog": {
+   "n": 5,
+   "passed": 4,
+   "pass@1": 80.0
   },
   "_meta": {
-   "llm_calls": 16,
-   "minutes": 1.2,
-   "complete": false
+   "llm_calls": 114,
+   "minutes": 10.8,
+   "complete": true
   }
  }
 }
