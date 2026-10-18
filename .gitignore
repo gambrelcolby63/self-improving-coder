@@ -11,3 +11,4 @@ RESUME_BULLETS.md
 state/
 # HumanEval data is MIT (OpenAI) and redistributed with its license
 store/local/
+store/experience_chat.jsonl

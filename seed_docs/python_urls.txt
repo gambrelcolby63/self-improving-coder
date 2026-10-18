@@ -1,0 +1,8 @@
+# Python standard library docs (Python Software Foundation License 2.0)
+https://docs.python.org/3/library/functools.html
+https://docs.python.org/3/library/itertools.html
+https://docs.python.org/3/library/collections.html
+https://docs.python.org/3/library/heapq.html
+https://docs.python.org/3/library/bisect.html
+https://docs.python.org/3/library/re.html
+https://docs.python.org/3/library/string.html
