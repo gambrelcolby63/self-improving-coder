@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+models/
+*.gguf
+.venv/
+secrets/
+*.password
+chat_password*
+RESUME_BULLETS.md
+state/
+# HumanEval data is MIT (OpenAI) and redistributed with its license
+store/local/

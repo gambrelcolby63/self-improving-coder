@@ -1,0 +1,13 @@
+FROM ./models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{- range .Messages }}<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{ end }}<|im_start|>assistant
+"""
+SYSTEM """You are Qwen, created by Alibaba Cloud. You are a helpful coding assistant."""
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+PARAMETER num_ctx 4096
+PARAMETER temperature 0
