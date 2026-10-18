@@ -1,0 +1,46 @@
+{
+ "a": {
+  "HumanEval": {
+   "n": 80,
+   "passed": 61,
+   "pass@1": 76.2
+  },
+  "ALL": {
+   "n": 90,
+   "passed": 63,
+   "pass@1": 70.0
+  },
+  "custom-cpp": {
+   "n": 5,
+   "passed": 2,
+   "pass@1": 40.0
+  },
+  "custom-verilog": {
+   "n": 5,
+   "passed": 0,
+   "pass@1": 0.0
+  },
+  "_meta": {
+   "llm_calls": 90,
+   "minutes": 10.0,
+   "complete": true
+  }
+ },
+ "b": {
+  "HumanEval": {
+   "n": 16,
+   "passed": 16,
+   "pass@1": 100.0
+  },
+  "ALL": {
+   "n": 16,
+   "passed": 16,
+   "pass@1": 100.0
+  },
+  "_meta": {
+   "llm_calls": 16,
+   "minutes": 1.2,
+   "complete": false
+  }
+ }
+}

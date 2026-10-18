@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="360" font-family="sans-serif" font-size="11">
+<rect width="100%" height="100%" fill="white"/>
+<text x="40" y="16" font-size="13">pass@1 (%) on held-out eval split</text>
+<rect x="40" y="117.12" width="28" height="182.88" fill="#9aa5b1"/>
+<text x="54.0" y="114.12" text-anchor="middle">76</text>
+<rect x="72" y="60.0" width="28" height="240.0" fill="#3b82f6"/>
+<text x="86.0" y="57.0" text-anchor="middle">100</text>
+<text x="80" y="316" text-anchor="middle">HumanEval (n=80)</text>
+<rect x="160" y="204.0" width="28" height="96.0" fill="#9aa5b1"/>
+<text x="174.0" y="201.0" text-anchor="middle">40</text>
+<rect x="192" y="300.0" width="28" height="0.0" fill="#3b82f6"/>
+<text x="206.0" y="297.0" text-anchor="middle">0</text>
+<text x="200" y="316" text-anchor="middle">custom-cpp (n=5)</text>
+<rect x="280" y="300.0" width="28" height="0.0" fill="#9aa5b1"/>
+<text x="294.0" y="297.0" text-anchor="middle">0</text>
+<rect x="312" y="300.0" width="28" height="0.0" fill="#3b82f6"/>
+<text x="326.0" y="297.0" text-anchor="middle">0</text>
+<text x="320" y="316" text-anchor="middle">custom-verilog (n=5)</text>
+<rect x="400" y="132.0" width="28" height="168.0" fill="#9aa5b1"/>
+<text x="414.0" y="129.0" text-anchor="middle">70</text>
+<rect x="432" y="60.0" width="28" height="240.0" fill="#3b82f6"/>
+<text x="446.0" y="57.0" text-anchor="middle">100</text>
+<text x="440" y="316" text-anchor="middle">ALL (n=90)</text>
+<rect x="40" y="330" width="10" height="10" fill="#9aa5b1"/><text x="54" y="339">(a) bare model, single-shot</text>
+<rect x="270" y="330" width="10" height="10" fill="#3b82f6"/><text x="284" y="339">(b) agent + sandbox repair</text>
+</svg>

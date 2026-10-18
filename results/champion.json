@@ -1,0 +1,10 @@
+{
+ "version": "a",
+ "label": "(a) bare model, single-shot",
+ "pass@1": 70.0,
+ "experience_lib_sha": null,
+ "n": 90,
+ "gate_log": [
+  "reject a (70.0%): does not beat champion a (70.0%)"
+ ]
+}
