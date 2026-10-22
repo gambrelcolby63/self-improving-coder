@@ -6,6 +6,7 @@
  "n": 90,
  "gate_log": [
   "reject a (70.0%): does not beat champion b (73.3%)",
-  "reject b (73.3%): does not beat champion b (73.3%)"
+  "reject b (73.3%): does not beat champion b (73.3%)",
+  "reject c (67.8%): does not beat champion b (73.3%)"
  ]
 }
