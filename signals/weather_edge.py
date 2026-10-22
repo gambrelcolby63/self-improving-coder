@@ -34,6 +34,8 @@ NOWCOAST = "https://nowcoast.noaa.gov/geoserver/observations/"
 UTC = dt.timezone.utc
 UA = {"User-Agent": "weather-edge-paper (personal research; no trading)"}
 ENS_TTL = 2 * 3600        # models update every 6 h; keep Open-Meteo usage low
+RAIN_MEMBER_IN = 0.03     # per-member rain threshold (drizzle correction)
+MARKET_CONFIDENT = 0.93   # do not fade a market this confident unless observations contradict it
 EDGE_MIN = 0.10           # paper flag threshold (EV per contract after fee)
 # US daily temperature/rain series (from /workspace/settle/series.json; intl ones have no CLI station and are skipped)
 SERIES = ["KXRAIN", "KXHIGHAUS", "KXHIGHCHI", "KXHIGHDEN", "KXHIGHLAX", "KXHIGHMIA", "KXHIGHNY", "KXHIGHPHIL",
@@ -110,8 +112,49 @@ def prob_rain(member_totals: list[float], locked: bool) -> float:
         return 0.99
     if not member_totals:
         return float("nan")
-    k = sum(1 for t in member_totals if t >= 0.01)
+    # drizzle correction: raw ensembles over-forecast trace amounts, so a member only counts as "rain"
+    # at >= RAIN_MEMBER_IN (settlement needs a measurable >= 0.01 in at the gauge)
+    k = sum(1 for t in member_totals if t >= RAIN_MEMBER_IN)
     return min(0.98, max(0.02, (k + 0.5) / (len(member_totals) + 1)))
+
+
+def obs_decided(kind: str, strike_type: str, floor, cap, obs_extreme=None, rain_locked=False):
+    """'YES'/'NO' if observations so far already settle the contract (1 F margin for METAR vs CLI), else None."""
+    if kind == "rain":
+        return "YES" if rain_locked else None
+    if obs_extreme is None:
+        return None
+    r = round(obs_extreme)
+    if kind == "high":           # the day's max can only go up
+        if strike_type == "greater" and r >= floor + 2:
+            return "YES"
+        if strike_type == "less" and r >= cap + 1:
+            return "NO"
+        if strike_type == "between" and r >= cap + 2:
+            return "NO"
+    else:                        # the day's min can only go down
+        if strike_type == "less" and r <= cap - 2:
+            return "YES"
+        if strike_type == "greater" and r <= floor - 1:
+            return "NO"
+        if strike_type == "between" and r <= floor - 2:
+            return "NO"
+    return None
+
+
+def gate(e: dict, decided, yes_ask, no_ask) -> dict:
+    """Locked-market filter applied to a raw edge."""
+    e = dict(e)
+    conf = max(yes_ask or 0, no_ask or 0) >= MARKET_CONFIDENT
+    if decided:
+        # outcome already set by observations: only a paper flag if we're on that side AND the market disagrees
+        ok = e["side"] == decided and (yes_ask if decided == "YES" else no_ask or 1) <= 0.90
+        e["gate"] = "obs_decided_" + decided + ("_market_disagrees" if ok else "")
+        e["flag"] = bool(e["flag"] and ok)
+    elif conf:
+        e["gate"] = "market_confident"
+        e["flag"] = False
+    return e
 
 
 def edge(p: float, yes_ask, no_ask) -> dict:
@@ -325,7 +368,7 @@ def build(markets, st, ens, obs, wx, t=None, nb=None) -> list[dict]:
         ot = [x["temp_f"] for x in o if x["temp_f"] is not None]
         # 6-h max/min groups catch extremes between hourly obs; only use ones whose 6-h window is inside the day
         for x in o:
-            if x.get("ext6") and x["t"] - 6 * 3600 >= t0.timestamp() - 60:
+            if x.get("ext6") and x["t"] - 6 * 3600 >= t0.timestamp() - 600:  # METAR :53 windows
                 hi, lo = x["ext6"]
                 ot += [v for v in ((hi if m["kind"] == "high" else lo),) if v is not None]
         hours_left = max(0.0, (t1 - t).total_seconds() / 3600)
@@ -350,6 +393,7 @@ def build(markets, st, ens, obs, wx, t=None, nb=None) -> list[dict]:
             sigma = 0.8 + min(1.2, hours_left / 16)   # extra kernel on top of ensemble spread
             ox = agg(ot) if ot else None
             p = prob_temp(vals, m["strike_type"], m["floor"], m["cap"], sigma, m["kind"], ox)
+            decided = obs_decided(m["kind"], m["strike_type"], m["floor"], m["cap"], ox)
             feat.update(obs_extreme=round(ox, 1) if ox is not None else None, bias_f=round(bias, 2), nbm_remaining=nbm_x,
                         ens_median_remaining=round(sorted(vals)[len(vals) // 2], 1) if vals else None,
                         sigma=round(sigma, 2))
@@ -357,6 +401,7 @@ def build(markets, st, ens, obs, wx, t=None, nb=None) -> list[dict]:
             locked = any(x["precip"] >= 0.01 for x in o)
             tot = [sum(mem[k] or 0 for k in idx) for mem in e["precip"]]
             p = prob_rain(tot, locked)
+            decided = obs_decided("rain", None, None, None, rain_locked=locked)
             feat.update(locked=locked, obs_precip=round(sum(x["precip"] for x in o), 2),
                         **wx.get(m["icao"], {}))
         if p != p:
@@ -368,7 +413,8 @@ def build(markets, st, ens, obs, wx, t=None, nb=None) -> list[dict]:
                          day=m["day"], close=m["close"], strike=dict(type=m["strike_type"], floor=m["floor"],
                                                                      cap=m["cap"]),
                          p_model=round(p, 3), yes_ask=m["yes_ask"], no_ask=m["no_ask"], mid=mid,
-                         edge=edge(p, m["yes_ask"], m["no_ask"]), features=feat))
+                         edge=gate(edge(p, m["yes_ask"], m["no_ask"]), decided, m["yes_ask"], m["no_ask"]),
+                         decided=decided, features=feat))
     return sigs
 
 

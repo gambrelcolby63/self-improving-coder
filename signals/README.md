@@ -14,7 +14,12 @@ Model
   (METAR temps + 6-h max/min groups); normal kernel for rounding / forecast error.
 * rain: locked (0.99) once a METAR P-group >= 0.01 in falls inside the climate day; otherwise fraction of
   ensemble members with >= 0.01 in over remaining hours. Radar/lightning fractions are context features only.
+* rain drizzle correction: a member counts as rain only at >= 0.03 in (`RAIN_MEMBER_IN`).
 * edge: EV per contract = p - ask - taker fee; paper flag if EV >= 0.10.
+* locked-market filter (`gate`): no flag when observations already decide the outcome (1 F margin), unless
+  we're on the observed side and the market still prices it <= 0.90; no flag when either ask >= 0.93
+  (`MARKET_CONFIDENT`) unless observations contradict the market. 6-h max/min METAR groups count when
+  their window starts up to 10 min before the climate day (fixes missed early-morning lows, e.g. KHOU).
 
 Run: `nohup setsid signals/loop.sh &` (every 15 min; `WEATHER_EDGE_INTERVAL` seconds).
 Files in `signals/data/` (gitignored): `signals.json`, `signals_log.jsonl`, `scores.json`, `settled.json`,

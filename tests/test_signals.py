@@ -135,3 +135,36 @@ def test_signals_page_requires_auth(tmp_path):
         assert d["paper_only"] and d["live_trading"] is False and d["signals"][0]["ticker"] == "KXRAIN-26OCT22-NYC"
     finally:
         srv.shutdown()
+
+
+def test_obs_decided_and_gate():
+    # Houston case: observed low 61.0 F -> "<=59" bins and ">61" are dead; 60-61 bin not decided by obs alone
+    assert we.obs_decided("low", "greater", 61, None, 60.0) == "NO"   # 1 F safety margin
+    assert we.obs_decided("low", "greater", 61, None, 61.0) is None
+    assert we.obs_decided("low", "between", 60, 61, 61.0) is None
+    assert we.obs_decided("high", "greater", 70, None, 72.4) == "YES"
+    assert we.obs_decided("rain", None, None, None, rain_locked=True) == "YES"
+    raw = dict(side="NO", ev=0.5, price=0.07, flag=True)
+    assert we.gate(raw, None, 0.95, 0.07)["flag"] is False           # don't fade a 95% market
+    assert we.gate(raw, "YES", 0.95, 0.07)["flag"] is False          # obs agree with market -> nothing
+    assert we.gate(dict(side="YES", ev=0.5, price=0.4, flag=True), "YES", 0.4, 0.62)["flag"] is True
+
+
+def test_six_hour_min_near_day_start_counts():
+    # 6-h min group in the 11:53Z ob (window starts 05:53Z, 7 min before the 06:00Z CST day start) must count
+    t = dt.datetime(2026, 10, 22, 13, tzinfo=UTC)
+    times = [(dt.datetime(2026, 10, 22, 6, tzinfo=UTC) + dt.timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M")
+             for h in range(30)]
+    ens = {"KHOU": dict(fetched=0, members=1, times=times, temp=[[67.0] * 30], precip=[[0.0] * 30])}
+    st = {"KHOU": dict(lat=1, lon=1, site="Houston", tz="America/Chicago")}
+    obs = {"KHOU": [dict(t=dt.datetime(2026, 10, 22, 10, 53, tzinfo=UTC).timestamp(), temp_f=63.0, precip=0, ext6=None),
+                    dict(t=dt.datetime(2026, 10, 22, 11, 53, tzinfo=UTC).timestamp(), temp_f=64.9, precip=0,
+                         ext6=(66.0, 61.0))]}
+    mk = [dict(ticker="KXLOWTHOU-26OCT22-B60.5", kind="low", icao="KHOU", day="2026-10-22", strike_type="between",
+               floor=60, cap=61, close="", yes_ask=0.95, no_ask=0.07, yes_bid=0.93)]
+    s = we.build(mk, st, ens, obs, {}, t)[0]
+    assert s["features"]["obs_extreme"] == 61.0 and s["p_model"] > 0.7 and not s["edge"]["flag"]
+
+
+def test_rain_drizzle_threshold():
+    assert we.prob_rain([0.01, 0.02, 0.0, 0.0], False) == 0.5 / 5   # trace-ish members don't count
