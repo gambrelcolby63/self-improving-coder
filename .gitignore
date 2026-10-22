@@ -15,3 +15,5 @@ store/experience_chat.jsonl
 .password
 .tunnel_url
 logs/
+.modal_api_key
+.modal_url

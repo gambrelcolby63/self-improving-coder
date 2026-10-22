@@ -29,7 +29,8 @@ import urllib.parse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PW_FILE = os.environ.get("SIC_PASSWORD_FILE", os.path.join(ROOT, ".password"))
 CONV_DIR = os.environ.get("SIC_CONV_DIR", os.path.join(ROOT, "state", "conversations"))
-MODELS = [m for m in os.environ.get("SIC_MODELS", "dolphin3-3b,sic-qwen2.5-coder-1.5b").split(",") if m]
+from .llm import available_models  # noqa: E402
+MODELS = available_models()
 CONV_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,40}$")
 
 
@@ -409,9 +410,8 @@ def default_agent(model: str | None = None):
                 lib.items.append(it)
         lib._reindex()
     from .memory import Memory
-    llm = OllamaLLM(model=model or MODELS[0], num_predict=1024, temperature=0.7,
-                    num_ctx=int(os.environ.get("SIC_NUM_CTX", "8192")), keep_alive="30m")
-    llm.options["top_k"] = 40  # natural, less robotic replies (tool turns still parse fine)
+    from .llm import make_llm  # SIC_BACKEND=modal|ollama (modal falls back to local Ollama)
+    llm = make_llm(model or MODELS[0], num_ctx=int(os.environ.get("SIC_NUM_CTX", "8192")))
     return ChatAgent(llm, sb, AgentComputer(sb), docs=load_store(), experience=lib,
                      signals_dir=SIGNALS_DIR, memory=Memory())
 
