@@ -82,7 +82,7 @@ class AgentComputer:
                            network=network)
 
     def run_command(self, command: str, timeout: int | None = None) -> dict:
-        t = min(int(timeout or self.cmd_timeout), 300)
+        t = min(int(timeout or self.cmd_timeout), 1800)
         # pip installs go to the agent user's own ~/.local (never system-wide)
         r = self._exec(["bash", "-c", "export PIP_BREAK_SYSTEM_PACKAGES=1\n" + command], timeout=t, network=True)
         return {"exit": r.returncode, "timed_out": r.timed_out, "stdout": r.stdout[-6000:],
@@ -122,7 +122,7 @@ class AgentComputer:
         return {"exit": r.returncode, "passed": r.ok, "output": (r.stdout + r.stderr)[-6000:]}
 
     TOOLS = {
-        "run_command": "run_command(command, timeout=60): run a bash command in your workspace (network allowed: pip install --user, git clone).",
+        "run_command": "run_command(command, timeout=60): run any bash command in your workspace (public internet allowed: pip install --user, npm, git clone; timeout up to 1800s).",
         "read_file": "read_file(path): read a text file from your workspace (relative path).",
         "write_file": "write_file(path, content): create/overwrite a file in your workspace.",
         "list_dir": "list_dir(path='.'): list a directory in your workspace.",

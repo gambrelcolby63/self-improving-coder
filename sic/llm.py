@@ -19,16 +19,31 @@ class OllamaLLM:
         self.calls = 0
         self.tokens = 0
 
-    def chat(self, messages: list[dict], **opts) -> str:
-        body = {"model": self.model, "messages": messages, "stream": False,
+    def chat(self, messages: list[dict], on_token=None, **opts) -> str:
+        """Return the reply. If on_token is given, stream and call it with each text chunk."""
+        body = {"model": self.model, "messages": messages, "stream": on_token is not None,
                 "options": {**self.options, **opts}, "keep_alive": self.keep_alive}
         req = urllib.request.Request(self.url + "/api/chat", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=600) as r:
-            d = json.loads(r.read())
         self.calls += 1
-        self.tokens += d.get("eval_count", 0)
-        return d["message"]["content"]
+        with urllib.request.urlopen(req, timeout=600) as r:
+            if on_token is None:
+                d = json.loads(r.read())
+                self.tokens += d.get("eval_count", 0)
+                return d["message"]["content"]
+            parts = []
+            for line in r:
+                if not line.strip():
+                    continue
+                d = json.loads(line)
+                chunk = d.get("message", {}).get("content", "")
+                if chunk:
+                    parts.append(chunk)
+                    on_token(chunk)
+                if d.get("done"):
+                    self.tokens += d.get("eval_count", 0)
+                    break
+            return "".join(parts)
 
 
 class MockLLM:
@@ -41,9 +56,10 @@ class MockLLM:
         self.calls = 0
         self.tokens = 0
 
-    def chat(self, messages, **opts) -> str:
-        self.prompts.append(messages)
+    def chat(self, messages, on_token=None, **opts) -> str:
+        self.prompts.append(list(messages))
         self.calls += 1
-        if self.fn:
-            return self.fn(messages)
-        return self.replies.pop(0) if self.replies else ""
+        out = self.fn(messages) if self.fn else (self.replies.pop(0) if self.replies else "")
+        if on_token and out:
+            on_token(out)
+        return out

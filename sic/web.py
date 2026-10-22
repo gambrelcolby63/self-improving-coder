@@ -20,6 +20,7 @@ import re
 import socket
 import urllib.parse
 import urllib.request
+import zlib
 from html.parser import HTMLParser
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) self-improving-coder/0.1 (+https://github.com/gambrelcolby63/self-improving-coder)"
@@ -142,10 +143,14 @@ def html_to_text(raw: str) -> tuple[str, str]:
 
 def _get(url: str, data: bytes | None = None, timeout: float = 10, max_bytes: int = 2_000_000):
     check_url(url)
-    req = urllib.request.Request(url, data=data, headers={"User-Agent": UA, "Accept-Language": "en"})
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": UA, "Accept-Language": "en",
+                                                             "Accept-Encoding": "gzip"})
     with _opener.open(req, timeout=timeout) as r:
         ctype = r.headers.get("Content-Type", "")
         body = r.read(max_bytes + 1)
+        if r.headers.get("Content-Encoding", "").lower() == "gzip" or body[:2] == b"\x1f\x8b":
+            d = zlib.decompressobj(16 + zlib.MAX_WBITS)  # bounded: no zip bombs
+            body = d.decompress(body, max_bytes + 1)
         return r.geturl(), ctype, body[:max_bytes], len(body) > max_bytes
 
 
