@@ -189,27 +189,95 @@ def backend() -> str:
 
 def available_models() -> list[str]:
     local = [m for m in os.environ.get("SIC_MODELS", "dolphin3-3b,sic-qwen2.5-coder-1.5b").split(",") if m]
+    if backend() == "lightning":
+        return [MODAL_CHAT_MODEL] + local
     if backend() != "modal":
         return local
     remote = [MODAL_CHAT_MODEL] + ([MODAL_CODER_MODEL] if os.environ.get("SIC_MODAL_CODER_URL") else [])
     return remote + local
 
 
+class HeartbeatLLM:
+    """Wraps a remote LLM: records last use (for the Lightning idle watchdog) and, if the remote is
+    down, optionally triggers a background start of the GPU Studio (rate-limited)."""
+
+    def __init__(self, inner, heartbeat_file: str, autostart_cmd: list[str] | None = None,
+                 autostart_every: float = 600.0, url_file: str | None = None):
+        self.inner, self.heartbeat_file, self.url_file = inner, heartbeat_file, url_file
+        self.autostart_cmd, self.autostart_every = autostart_cmd, autostart_every
+        self._last_start = 0.0
+        self.base_url, self.model = getattr(inner, "base_url", ""), getattr(inner, "model", "")
+        self.calls = 0
+        self.tokens = 0
+
+    def _beat(self):
+        import time
+        try:
+            os.makedirs(os.path.dirname(self.heartbeat_file), exist_ok=True)
+            with open(self.heartbeat_file, "w") as f:
+                f.write(str(time.time()))
+        except OSError:
+            pass
+
+    def chat(self, messages, on_token=None, **opts):
+        self.calls += 1
+        self._beat()
+        if self.url_file:  # the Studio URL can appear/change after a (re)start
+            url = _read(self.url_file)
+            if url:
+                self.inner.base_url = url.rstrip("/")
+        return self.inner.chat(messages, on_token=on_token, **opts)
+
+    def warm(self):
+        import subprocess
+        import time
+        self._beat()
+        if self.autostart_cmd and time.time() - self._last_start > self.autostart_every:
+            self._last_start = time.time()
+            subprocess.Popen(self.autostart_cmd, cwd=ROOT, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        elif hasattr(self.inner, "warm"):
+            self.inner.warm()
+
+
+def _remote_cfg(model: str):
+    """(url, key, wrap) for the active remote backend, or None."""
+    b = backend()
+    if b == "modal":
+        url = (os.environ.get("SIC_MODAL_CODER_URL") if model == MODAL_CODER_MODEL
+               else os.environ.get("SIC_MODAL_URL") or _read(os.path.join(ROOT, ".modal_url")))
+        key = os.environ.get("SIC_MODAL_API_KEY") or _read(os.environ.get(
+            "SIC_MODAL_API_KEY_FILE", os.path.join(ROOT, ".modal_api_key")))
+        return (url, key, None) if url and key else None
+    if b == "lightning" and model == MODAL_CHAT_MODEL:
+        url_file = os.path.join(ROOT, ".lightning_url")
+        url = os.environ.get("SIC_LIGHTNING_URL") or _read(url_file)
+        key = _read(os.environ.get("SIC_LIGHTNING_KEY_FILE", os.path.join(ROOT, ".lightning_llm_key")))
+        hb = os.environ.get("SIC_LIGHTNING_HEARTBEAT", os.path.join(ROOT, "state", "llm_last_used"))
+        auto = None
+        if os.environ.get("SIC_LIGHTNING_AUTOSTART", "1") == "1":
+            auto = ["bash", os.path.join(ROOT, "deploy", "lightning.sh"), "up"]
+        if not key:
+            return None
+        # url may be missing before the first `up`; autostart will create it
+        return (url or "http://127.0.0.1:9", key, lambda llm: HeartbeatLLM(llm, hb, auto, url_file=None if os.environ.get("SIC_LIGHTNING_URL") else url_file))
+    return None
+
+
 def make_llm(model: str, num_ctx: int = 8192, temperature: float = 0.7, num_predict: int = 1024):
-    """SIC_BACKEND=modal|ollama. Modal models get automatic fallback to the local Ollama equivalent."""
+    """SIC_BACKEND=modal|lightning|ollama. Remote models fall back to the local Ollama equivalent."""
     def local(name):
         llm = OllamaLLM(model=name, num_predict=num_predict, temperature=temperature, num_ctx=num_ctx,
                         keep_alive="30m")
         llm.options["top_k"] = 40
         return llm
-    if backend() == "modal" and model in LOCAL_EQUIV:
-        url = (os.environ.get("SIC_MODAL_CODER_URL") if model == MODAL_CODER_MODEL
-               else os.environ.get("SIC_MODAL_URL") or _read(os.path.join(ROOT, ".modal_url")))
-        key = os.environ.get("SIC_MODAL_API_KEY") or _read(os.environ.get(
-            "SIC_MODAL_API_KEY_FILE", os.path.join(ROOT, ".modal_api_key")))
-        if url and key:
+    if backend() in ("modal", "lightning") and model in LOCAL_EQUIV:
+        cfg = _remote_cfg(model)
+        if cfg:
+            url, key, wrap = cfg
             remote = OpenAICompatLLM(url, key, model, temperature=temperature, max_tokens=num_predict,
-                                     first_token_timeout=float(os.environ.get("SIC_MODAL_FIRST_TOKEN_TIMEOUT", "25")))
-            return FallbackLLM(remote, local(LOCAL_EQUIV[model]))
+                                     first_token_timeout=float(os.environ.get("SIC_REMOTE_FIRST_TOKEN_TIMEOUT",
+                                                               os.environ.get("SIC_MODAL_FIRST_TOKEN_TIMEOUT", "25"))))
+            return FallbackLLM(wrap(remote) if wrap else remote, local(LOCAL_EQUIV[model]))
         return local(LOCAL_EQUIV[model])
     return local(model)

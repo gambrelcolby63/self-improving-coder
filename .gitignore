@@ -17,3 +17,5 @@ store/experience_chat.jsonl
 logs/
 .modal_api_key
 .modal_url
+.lightning_llm_key
+.lightning_url
