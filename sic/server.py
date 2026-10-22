@@ -172,9 +172,38 @@ button{background:#3b82f6;color:#fff;border:0}</style></head><body><form method=
 <button>Log in</button><small>%MSG%</small></form></body></html>"""
 
 
+SIGNALS_DIR = os.environ.get("SIC_SIGNALS_DIR", os.path.join(ROOT, "signals", "data"))
+SIGNALS_PAGE = """<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>Signals (paper)</title>
+<style>body{margin:0;background:#0f1115;color:#e8e8e8;font:15px/1.4 system-ui,-apple-system,sans-serif}
+header{position:sticky;top:0;background:#171a21;padding:10px 12px;border-bottom:1px solid #262a33}
+.b{display:inline-block;background:#3a1d1d;color:#ffb4b4;border-radius:6px;padding:2px 6px;font-size:12px}
+select,button{font:15px system-ui;background:#222733;color:#eee;border:1px solid #333;border-radius:8px;padding:6px}
+.c{background:#171a21;margin:8px;padding:10px;border-radius:10px;border:1px solid #262a33}
+.f{border-color:#3d7a3d}.m{color:#9aa3b2;font-size:13px}.t{font-weight:600;word-break:break-all}
+table{width:100%;font-size:13px;border-collapse:collapse}td{padding:2px 4px}</style></head><body>
+<header><b>Weather signals</b> <span class=b>PAPER ONLY &middot; live trading OFF</span>
+<div style="margin-top:6px"><select id=k><option value="">all</option><option>high</option><option>low</option>
+<option>rain</option></select> <label><input type=checkbox id=fl checked> flagged</label>
+<button onclick=load()>refresh</button> <a href="/" style="color:#8ab4ff">chat</a></div>
+<div class=m id=meta></div></header><div id=sc></div><div id=list></div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+async function load(){const q='?kind='+k.value+'&flagged='+(fl.checked?1:0);
+const r=await fetch('/api/signals'+q);if(r.status!==200){location='/login';return}const d=await r.json();
+meta.textContent='generated '+(d.generated?new Date(d.generated).toLocaleString():'never')+' \u00b7 '+d.n_signals+' markets \u00b7 '+d.n_flags+' flags';
+let s='<div class=c><b>Score vs settled results</b> ('+d.settled_tickers+' settled)<table><tr><td>kind<td>n<td>Brier model<td>Brier mkt<td>paper P&L';
+for(const[k2,v]of Object.entries(d.scores||{}))s+='<tr><td>'+esc(k2)+'<td>'+v.tickers+'<td>'+esc(v.brier_model)+'<td>'+esc(v.brier_market)+'<td>'+esc(v.paper_pnl_per_contract_sum)+' ('+v.paper_trades+')';
+sc.innerHTML=s+'</table><div class=m>Lower Brier is better. Edge is unproven until model beats market.</div></div>';
+list.innerHTML=d.signals.map(x=>'<div class="c'+(x.flag?' f':'')+'"><div class=t>'+esc(x.ticker)+'</div><div class=m>'+esc(x.city)+' \u00b7 '+esc(x.kind)+' \u00b7 '+esc(x.hours_left)+'h left</div>model p(yes) <b>'+esc(x.p_model)+'</b> \u00b7 yes ask '+esc(x.yes_ask)+' \u00b7 no ask '+esc(x.no_ask)+'<br>paper: '+esc(x.side||'-')+' ev '+esc(x.ev)+'</div>').join('')||'<div class=c>no signals</div>'}
+k.onchange=load;fl.onchange=load;load();setInterval(load,120000)
+</script></body></html>"""
+
+
 class App:
     def __init__(self, agent_factory, password: str, store: "ConversationStore | None" = None,
-                 models: list[str] | None = None):
+                 models: list[str] | None = None, signals_dir: str | None = None):
+        self.signals_dir = signals_dir or SIGNALS_DIR
         self.agent_factory = agent_factory  # model name -> agent
         self.agents: dict[str, object] = {}
         self.password = password
@@ -252,6 +281,14 @@ def make_handler(app: App):
                 return self._send(303, "", extra={"Location": "/login"})
             if path == "/":
                 return self._send(200, PAGE)
+            if path == "/signals":
+                return self._send(200, SIGNALS_PAGE)
+            if path == "/api/signals":
+                from signals.feed import get_trade_signals
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                return self._json(get_trade_signals(app.signals_dir, kind=(qs.get("kind") or [None])[0],
+                                                    flagged_only=(qs.get("flagged") or ["0"])[0] == "1",
+                                                    limit=60))
             if path == "/api/models":
                 return self._json({"models": app.models})
             if path == "/api/convs":
@@ -358,7 +395,8 @@ def default_agent(model: str | None = None):
             if it["id"] not in {x["id"] for x in lib.items}:
                 lib.items.append(it)
         lib._reindex()
-    return ChatAgent(OllamaLLM(model=model or MODELS[0], num_predict=1024, temperature=0.3), sb, AgentComputer(sb), docs=load_store(), experience=lib)
+    return ChatAgent(OllamaLLM(model=model or MODELS[0], num_predict=1024, temperature=0.3), sb, AgentComputer(sb),
+                     docs=load_store(), experience=lib, signals_dir=SIGNALS_DIR)
 
 
 def main():

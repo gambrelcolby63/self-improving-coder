@@ -101,7 +101,8 @@ def verify(sandbox, lang: str, code: str):
 
 class ChatAgent:
     def __init__(self, llm, sandbox, computer=None, docs=None, experience=None, web=True,
-                 search_fn=web_search, fetch_fn=fetch_url):
+                 search_fn=web_search, fetch_fn=fetch_url, signals_dir=None):
+        self.signals_dir = signals_dir
         self.llm, self.sb, self.computer = llm, sandbox, computer
         self.docs, self.exp, self.web = docs, experience, web
         self.search_fn, self.fetch_fn = search_fn, fetch_fn
@@ -113,6 +114,9 @@ class ChatAgent:
                       "- fetch_url(url): fetch a public web page as text."]
         if self.computer:
             lines += ["- " + d for d in self.computer.TOOLS.values()]
+        if self.signals_dir:
+            lines.append("- get_trade_signals(kind?, city?, flagged_only?): PAPER-ONLY Kalshi weather signals "
+                         "(kind = high|low|rain) with model probability, asks, paper edge and settled scores.")
         return "\n".join(lines) or "(none)"
 
     def _call_tool(self, name, args, sources):
@@ -130,6 +134,12 @@ class ChatAgent:
                 return f"error: {r['error']}"
             sources.append({"title": r.get("title", ""), "url": r["url"]})
             return f"<untrusted source=\"[{len(sources)}] {r['url']}\">\n{r['text'][:5000]}\n</untrusted>"
+        if name == "get_trade_signals" and self.signals_dir:
+            from signals.feed import get_trade_signals
+            a = args if isinstance(args, dict) else {}
+            r = get_trade_signals(self.signals_dir, kind=a.get("kind") or None, city=a.get("city") or None,
+                                  flagged_only=bool(a.get("flagged_only")))
+            return f"<untrusted source=\"signal feed (public market + weather data)\">\n{json.dumps(r)[:5000]}\n</untrusted>"
         if self.computer and name in self.computer.TOOLS:
             r = self.computer.call(name, args if isinstance(args, dict) else {})
             body = json.dumps(r)[:6000]
@@ -172,6 +182,13 @@ class ChatAgent:
                     emit({"type": "tool", "name": "fetch_url", "args": {"url": sources[0]["url"]}})
                     pre.append(self._call_tool("fetch_url", {"url": sources[0]["url"]}, sources))
             context += pre
+        if self.signals_dir:
+            from signals.feed import summary, wants_signals
+            if wants_signals(message):
+                sm = summary(self.signals_dir)
+                if sm:
+                    emit({"type": "tool", "name": "get_trade_signals", "args": {"summary": True}, "auto": True})
+                    context.append(sm)
         run = RUN_RE.search(message) if self.computer else None
         if run:  # explicit "run <command>": execute it for real instead of trusting the model
             cmd = run.group(1).strip()
