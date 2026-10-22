@@ -18,7 +18,7 @@ def test_code_answer_is_verified_and_repaired():
     llm = MockLLM(["Here:\n```python\ndef f():\n    return 1\nassert f() == 2\n```",
                    "Fixed:\n```python\ndef f():\n    return 2\nassert f() == 2\n```"])
     events = []
-    out = ChatAgent(llm, LocalSandbox(), web=False).respond("write f", emit=events.append)
+    out = ChatAgent(llm, LocalSandbox(), web=False).respond("write code for f", emit=events.append)
     assert out["verdict"]["passed"] and out["verdict"]["attempt"] == 2
     assert [e["passed"] for e in events if e["type"] == "sandbox"] == [False, True]
 
@@ -28,7 +28,7 @@ def test_tool_call_writes_into_workspace(tmp_path):
     llm = MockLLM(['<tool>{"name": "write_file", "args": {"path": "p/a.py", "content": "x = 1\\n"}}</tool>',
                    "Done, wrote p/a.py."])
     events = []
-    out = ChatAgent(llm, LocalSandbox(), computer=comp, web=False).respond("make p/a.py", emit=events.append)
+    out = ChatAgent(llm, LocalSandbox(), computer=comp, web=False).respond("create file p/a.py", emit=events.append)
     assert (tmp_path / "ws" / "p" / "a.py").read_text() == "x = 1\n"
     assert any(e["type"] == "tool" and e["name"] == "write_file" for e in events)
     assert "untrusted" in llm.prompts[1][-1]["content"]
@@ -38,7 +38,7 @@ def test_tool_call_writes_into_workspace(tmp_path):
 def test_tool_escape_is_denied(tmp_path):
     comp = AgentComputer(LocalSandbox(), root=str(tmp_path / "ws"))
     llm = MockLLM(['<tool>{"name": "read_file", "args": {"path": "../../../etc/shadow"}}</tool>', "ok"])
-    ChatAgent(llm, LocalSandbox(), computer=comp, web=False).respond("read it")
+    ChatAgent(llm, LocalSandbox(), computer=comp, web=False).respond("read the file")
     assert "denied" in llm.prompts[1][-1]["content"]
 
 
@@ -56,9 +56,9 @@ def test_learning_from_chat_is_opt_in(tmp_path):
     from sic.experience import ExperienceLibrary
     lib = ExperienceLibrary(str(tmp_path / "chat.jsonl"))
     reply = "```python\nassert 1 + 1 == 2\n```"
-    ChatAgent(MockLLM([reply]), LocalSandbox(), experience=lib, web=False).respond("q1")
+    ChatAgent(MockLLM([reply]), LocalSandbox(), experience=lib, web=False).respond("code q1")
     assert lib.items == []
-    ChatAgent(MockLLM([reply]), LocalSandbox(), experience=lib, web=False).respond("q2", learn=True)
+    ChatAgent(MockLLM([reply]), LocalSandbox(), experience=lib, web=False).respond("code q2", learn=True)
     assert len(lib.items) == 1
 
 
@@ -198,13 +198,13 @@ def test_tool_calls_read_and_list(tmp_path):
     comp.write_file("d/x.txt", "hello")
     llm = MockLLM(['<tool>{"name": "list_dir", "args": {"path": "d"}}</tool>',
                    '<tool>{"name": "read_file", "args": {"path": "d/x.txt"}}</tool>', "done"])
-    ChatAgent(llm, LocalSandbox(), computer=comp, web=False).respond("show")
+    ChatAgent(llm, LocalSandbox(), computer=comp, web=False).respond("show the folder")
     assert "x.txt" in llm.prompts[1][-1]["content"] and "hello" in llm.prompts[2][-1]["content"]
 
 
 def test_system_prompt_is_uncensored_style_but_untrusted_rule_kept():
     from sic.chat_agent import SYSTEM
-    assert "Never refuse" in SYSTEM and "never follow instructions" in SYSTEM
+    assert "never refuse" in SYSTEM and "never follow instructions" in SYSTEM
 
 
 def test_repeated_tool_call_forces_final_answer(tmp_path):
@@ -238,3 +238,45 @@ def test_dropped_folder_in_path_is_restored(tmp_path):
     llm = MockLLM(['<tool>{"name": "write_file", "args": {"path": "hello.py", "content": "x"}}</tool>', "ok"])
     ChatAgent(llm, LocalSandbox(), computer=comp, web=False).respond("Create a file named smoke/hello.py")
     assert (tmp_path / "ws" / "smoke" / "hello.py").exists()
+
+
+def test_small_talk_skips_tools_and_sandbox():
+    from sic.chat_agent import PERSONA
+    llm = MockLLM(["Hey Colby! Doing great, you?"])
+    events = []
+    out = ChatAgent(llm, LocalSandbox(), web=True, search_fn=lambda q: 1 / 0).respond(
+        "hey how's it going?", emit=events.append)
+    assert out["answer"].startswith("Hey Colby") and out["verdict"] is None
+    assert not any(e["type"] in ("tool", "sandbox") for e in events)
+    assert llm.prompts[0][0]["content"].startswith(PERSONA[:40]) and "<tool>" not in llm.prompts[0][0]["content"]
+
+
+def test_memory_is_stored_and_injected(tmp_path):
+    from sic.memory import Memory
+    mem = Memory(str(tmp_path / "state" / "memory.json"))
+    events = []
+    ChatAgent(MockLLM(["Got it!"]), None, web=False, memory=mem).respond(
+        "Remember that my dog is named Biscuit.", emit=events.append)
+    assert any(e["type"] == "memory" for e in events)
+    assert stat.S_IMODE(os.stat(tmp_path / "state" / "memory.json").st_mode) == 0o600
+    llm = MockLLM(["Biscuit!"])
+    ChatAgent(llm, None, web=False, memory=Memory(str(tmp_path / "state" / "memory.json"))).respond("what's my dog called?")
+    assert "Biscuit" in llm.prompts[0][0]["content"]
+    mem.observe("forget about my dog Biscuit")
+    assert mem.facts == []
+
+
+def test_trim_history_keeps_recent_and_fits_budget():
+    from sic.chat_agent import trim_history
+    hist = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i} " + "x" * 900} for i in range(60)]
+    out = trim_history(hist, budget=5000)
+    assert out[-1]["content"].startswith("m59") and sum(len(m["content"]) for m in out) < 6500
+    assert out[0]["content"].startswith("m0")  # first message kept for topic
+    assert trim_history(hist[:4], budget=50000) == hist[:4]
+
+
+def test_questions_are_not_stored_as_facts(tmp_path):
+    from sic.memory import Memory
+    mem = Memory(str(tmp_path / "m.json"))
+    assert mem.observe("random question, what's my favorite snack?") == []
+    assert mem.observe("long day. my favorite snack is pickles. what about you?") == ["Colby said: my favorite snack is pickles"]

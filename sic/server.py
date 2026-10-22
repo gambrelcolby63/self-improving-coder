@@ -97,7 +97,7 @@ def load_or_create_password(path: str = PW_FILE) -> str:
 PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0f1115">
-<title>SIC</title><style>
+<title>Dolphin</title><style>
 :root{--bg:#0f1115;--fg:#e6e6e6;--mut:#8b93a1;--card:#1a1d24;--acc:#3b82f6;--ok:#16a34a;--bad:#dc2626}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;height:100dvh}
 header{padding:8px 10px;border-bottom:1px solid #262a33;display:flex;gap:8px;align-items:center}
@@ -118,15 +118,19 @@ a{color:#7fb0ff}details summary{cursor:pointer;color:var(--mut);font-size:12px}
 </style></head><body>
 <div id="side"><div style="padding:10px;display:flex;gap:8px"><button class="hb" id="newc" style="flex:1">+ New chat</button><form method="post" action="/logout" style="padding:0;border:0"><button class="hb">Log out</button></form></div>
 <label style="padding:4px 12px;font-size:12px;color:var(--mut)"><input type="checkbox" id="learn"> learn from verified code</label><div id="convs"></div></div>
-<header><button class="hb" id="menu">☰</button><b id="ttl">SIC</b><select id="model"></select></header>
+<header><button class="hb" id="menu">☰</button><b id="ttl">Dolphin</b><button class="hb" id="tts" title="read replies aloud">🔇</button><select id="model"></select></header>
 <div id="log"></div>
-<form id="f"><textarea id="q" placeholder="Message…"></textarea><button id="send">Send</button></form>
+<form id="f"><button type="button" class="hb" id="mic" title="talk">🎤</button><textarea id="q" placeholder="Message Dolphin…"></textarea><button id="send">Send</button></form>
 <script>
 const $=id=>document.getElementById(id),log=$('log'),q=$('q');let cur=null,busy=false;
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function md(s){let out='',i=0;const re=/```(\w*)\n([\s\S]*?)```/g;let m;while((m=re.exec(s))){out+=esc(s.slice(i,m.index))+'<pre>'+esc(m[2])+'</pre>';i=re.lastIndex}return out+esc(s.slice(i))}
 function add(cls,html){const d=document.createElement('div');d.className=cls;d.innerHTML=html;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
-function evText(e){if(e.type==='tool')return '🔧 '+e.name+'('+esc(JSON.stringify(e.args).slice(0,300))+')'+(e.auto?' [auto]':'');
+const FRIENDLY={web_search:'🌐 Checking the web…',fetch_url:'🌐 Reading a page…',run_command:'💻 Running a command…',write_file:'📝 Writing a file…',read_file:'📂 Looking at a file…',list_dir:'📂 Looking at files…',run_tests:'🧪 Running tests…',get_trade_signals:'📈 Checking signals…'};
+function friendly(e){if(e.type==='tool')return FRIENDLY[e.name]||'🔧 Using '+e.name+'…';if(e.type==='sandbox')return e.passed?'✅ Tested the code, it works':'🧪 Testing the code…';if(e.type==='memory')return '📝 Noted: '+e.fact;if(e.type==='error')return '⚠️ Something went wrong';return ''}
+function steps(evs){const raw=evs.map(evText).filter(Boolean),fr=[...new Set(evs.map(friendly).filter(Boolean))];if(!fr.length&&!raw.length)return '';
+ return '<details class="ev"><summary>'+esc(fr.join(' · ')||'details')+'</summary>'+raw.join('\n')+'</details>'}
+function evText(e){if(e.type==='memory')return '📝 remembered: '+esc(e.fact);if(e.type==='tool')return '🔧 '+e.name+'('+esc(JSON.stringify(e.args).slice(0,300))+')'+(e.auto?' [auto]':'');
  if(e.type==='tool_result')return '   ↳ '+esc(e.preview.replace(/<\/?untrusted[^>]*>/g,'').slice(0,400));
  if(e.type==='sandbox')return '🧪 sandbox run #'+e.attempt+' ('+e.lang+'): '+(e.passed?'PASS':'FAIL');
  if(e.type==='experience')return '📚 recalled past solution '+esc(e.id||'');
@@ -143,12 +147,12 @@ async function loadConvs(){const d=await (await api('/api/convs')).json();$('con
   el.querySelector('span').onclick=()=>{openConv(c.id);$('side').classList.remove('open')};
   el.querySelector('a').onclick=async ev=>{ev.preventDefault();if(!confirm('Delete chat?'))return;await api('/api/conv/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:c.id})});if(c.id===cur)newConv();loadConvs()};
   $('convs').appendChild(el)}}
-function newConv(){cur=null;localStorage.removeItem('conv');log.innerHTML='<div class="ev">New chat. I can run commands, edit files and code in my sandboxed workspace, and search the web.</div>';$('ttl').textContent='SIC'}
+function newConv(){cur=null;localStorage.removeItem('conv');log.innerHTML='<div class="ev">Hey Colby! Just talk to me. I can also run stuff, write code and search the web when you ask.</div>';$('ttl').textContent='SIC'}
 async function openConv(id){const r=await api('/api/conv?id='+encodeURIComponent(id));if(!r.ok){newConv();return}const c=await r.json();cur=c.id;localStorage.conv=cur;$('ttl').textContent=c.title;log.innerHTML='';
- for(const m of c.messages){if(m.role==='user')add('msg user',esc(m.content));else{if(m.events&&m.events.length)add('ev',m.events.map(evText).filter(Boolean).join('\n'));add('msg bot',botHtml(m))}}loadConvs()}
+ for(const m of c.messages){if(m.role==='user')add('msg user',esc(m.content));else{if(m.events&&m.events.length){const h=steps(m.events);if(h)add('',h)}add('msg bot',botHtml(m))}}loadConvs()}
 $('menu').onclick=()=>{$('side').classList.toggle('open');loadConvs()};$('newc').onclick=()=>{newConv();$('side').classList.remove('open')};
 $('f').onsubmit=async ev=>{ev.preventDefault();const text=q.value.trim();if(!text||busy)return;busy=true;$('send').disabled=true;q.value='';
- add('msg user',esc(text));const evbox=add('ev','thinking…');const live=add('msg bot','');let lines=[],stream='';
+ add('msg user',esc(text));const evbox=add('ev','…');let evs=[];const live=add('msg bot','');let lines=[],stream='';
  try{const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,conv_id:cur,model:$('model').value,learn:$('learn').checked})});
  const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
  while(true){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let k;
@@ -156,11 +160,20 @@ $('f').onsubmit=async ev=>{ev.preventDefault();const text=q.value.trim();if(!tex
    if(e.type==='conv'){cur=e.id;localStorage.conv=cur;$('ttl').textContent=e.title}
    else if(e.type==='token'){stream+=e.text;live.innerHTML=stream.trimStart().startsWith('<tool')?'<span class="ev">calling tool…</span>':md(stream);log.scrollTop=log.scrollHeight}
    else if(e.type==='reset'){stream='';live.innerHTML=''}
-   else if(e.type==='final'){live.innerHTML=botHtml(e);if(!lines.length)evbox.remove()}
-   else{const t=evText(e);if(t){lines.push(t);evbox.innerHTML=lines.join('\n')}}}}}
+   else if(e.type==='final'){live.innerHTML=botHtml(e);if(!evs.length)evbox.remove();speak(e.answer)}
+   else{evs.push(e);const h=steps(evs);if(h){evbox.className='';evbox.innerHTML=h}}}}}
  catch(err){if(err)add('ev','⚠️ connection error: '+esc(err))}
  busy=false;$('send').disabled=false;log.scrollTop=log.scrollHeight};
 q.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&window.innerWidth>700){e.preventDefault();$('f').requestSubmit()}});
+// voice: Web Speech API (speech-to-text mic, optional text-to-speech)
+let ttsOn=localStorage.tts==='1';const ttsB=$('tts');ttsB.textContent=ttsOn?'🔊':'🔇';
+ttsB.onclick=()=>{ttsOn=!ttsOn;localStorage.tts=ttsOn?'1':'0';ttsB.textContent=ttsOn?'🔊':'🔇';if(!ttsOn)speechSynthesis.cancel()};
+function speak(t){if(!ttsOn||!window.speechSynthesis||!t)return;t=t.replace(/```[\s\S]*?```/g,' (code below) ').replace(/\[\d+\]/g,'').slice(0,1200);speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(t))}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;const mic=$('mic');
+if(!SR)mic.style.display='none';else{let rec=null;mic.onclick=()=>{if(rec){rec.stop();return}
+ rec=new SR();rec.lang=navigator.language||'en-US';rec.interimResults=true;const base=q.value?q.value+' ':'';
+ rec.onresult=ev=>{let t='';for(const r of ev.results)t+=r[0].transcript;q.value=base+t;if(ev.results[ev.results.length-1].isFinal&&localStorage.autosend!=='0'){rec.stop();setTimeout(()=>$('f').requestSubmit(),150)}};
+ rec.onend=()=>{rec=null;mic.textContent='🎤'};rec.onerror=()=>{rec=null;mic.textContent='🎤'};mic.textContent='⏺';rec.start()}}
 loadModels();if(localStorage.conv)openConv(localStorage.conv);else newConv();
 </script></body></html>"""
 
@@ -395,8 +408,12 @@ def default_agent(model: str | None = None):
             if it["id"] not in {x["id"] for x in lib.items}:
                 lib.items.append(it)
         lib._reindex()
-    return ChatAgent(OllamaLLM(model=model or MODELS[0], num_predict=1024, temperature=0.3), sb, AgentComputer(sb),
-                     docs=load_store(), experience=lib, signals_dir=SIGNALS_DIR)
+    from .memory import Memory
+    llm = OllamaLLM(model=model or MODELS[0], num_predict=1024, temperature=0.7,
+                    num_ctx=int(os.environ.get("SIC_NUM_CTX", "8192")), keep_alive="30m")
+    llm.options["top_k"] = 40  # natural, less robotic replies (tool turns still parse fine)
+    return ChatAgent(llm, sb, AgentComputer(sb), docs=load_store(), experience=lib,
+                     signals_dir=SIGNALS_DIR, memory=Memory())
 
 
 def main():
